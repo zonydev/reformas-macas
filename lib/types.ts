@@ -3,7 +3,7 @@
  */
 
 // Categorías disponibles en el escandallo
-export type CategoryKey = 'materiales' | 'manoObra' | 'maquinaria' | 'costesIndirectos';
+export type CategoryKey = 'materiales' | 'manoObra' | 'maquinaria' | 'costesIndirectos' | 'otros';
 
 // Línea de concepto individual
 export interface LineItem {
@@ -23,18 +23,28 @@ export interface Margins {
   beneficioPct: number; // Aplicado sobre coste directo + GG
 }
 
+// Opciones de exportación a Excel
+export interface ExportOptions {
+  nombreArchivo: string; // Nombre personalizado del archivo Excel (obligatorio)
+  fechaInicio?: Date; // Fecha de inicio estimada del proyecto
+  duracionValor?: number; // Cantidad de días o semanas
+  duracionUnidad?: 'dias' | 'semanas'; // Unidad de la duración
+}
+
 // Estructura de datos por categoría
 export interface CategoryData {
   materiales: LineItem[];
   manoObra: LineItem[];
   maquinaria: LineItem[];
   costesIndirectos: LineItem[];
+  otros: LineItem[]; // Gastos sin margen aplicado
 }
 
 // Input para cálculo de estimación
 export interface EstimateInput {
   categories: CategoryData;
   margins: Margins;
+  exportOptions?: ExportOptions; // Opciones opcionales para exportación
 }
 
 // Subtotales por categoría antes de márgenes
@@ -43,7 +53,8 @@ export interface Subtotals {
   manoObra: number;
   maquinaria: number;
   costesIndirectos: number;
-  costeDirecto: number; // Suma de las 4 categorías
+  otros: number; // Gastos sin márgenes
+  costeDirecto: number; // Suma de las 4 primeras categorías (base para márgenes)
 }
 
 // Resultado del cálculo de estimación

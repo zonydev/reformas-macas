@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { format } from 'date-fns';
-import { EstimateInput, CategoryKey } from '@/lib/types';
+import { EstimateInput, CategoryKey, ExportOptions } from '@/lib/types';
 import { calculateEstimate } from '@/lib/costing';
 import { validateEstimateInput } from '@/lib/validation';
 import { getCategoryMetadata } from '@/lib/constants';
+import { calculateEndDate, formatDateEs, formatDuration } from '@/lib/dateUtils';
+
+/**
+ * Sanitiza el nombre del archivo manteniendo caracteres UTF-8 válidos (ñ, tildes)
+ * pero eliminando caracteres no permitidos en sistemas de archivos
+ */
+function sanitizeFilename(filename: string): string {
+  // Remover caracteres no permitidos en sistemas de archivos: / \ : * ? " < > |
+  // Mantener caracteres UTF-8 como ñ, tildes, etc.
+  return filename.replace(/[\/\\:*?"<>|]/g, '_').trim();
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +32,17 @@ export async function POST(request: NextRequest) {
 
     const input = body as EstimateInput;
     const estimate = calculateEstimate(input.categories, input.margins);
+    const exportOptions = input.exportOptions as ExportOptions | undefined;
+
+    // Calcular fecha de finalización si es necesario
+    let fechaFinalizacion: Date | undefined;
+    if (exportOptions?.fechaInicio && exportOptions?.duracionValor && exportOptions?.duracionUnidad) {
+      fechaFinalizacion = calculateEndDate(
+        new Date(exportOptions.fechaInicio),
+        exportOptions.duracionValor,
+        exportOptions.duracionUnidad
+      );
+    }
 
     // Crear workbook
     const workbook = new ExcelJS.Workbook();
@@ -40,6 +62,37 @@ export async function POST(request: NextRequest) {
     // Fecha
     generalSheet.getCell('A2').value = 'Fecha:';
     generalSheet.getCell('B2').value = format(new Date(), 'dd/MM/yyyy HH:mm');
+    
+    // Información del proyecto (si se proporcionó)
+    let projectInfoStartRow = 4;
+    if (exportOptions?.fechaInicio || (exportOptions?.duracionValor && exportOptions?.duracionUnidad)) {
+      generalSheet.addRow([]);
+      const projectInfoRow = generalSheet.addRow(['INFORMACIÓN DEL PROYECTO']).font = { bold: true };
+      projectInfoStartRow = generalSheet.lastRow?.number ?? 5;
+      
+      if (exportOptions?.fechaInicio) {
+        generalSheet.addRow([
+          'Fecha de inicio estimada:',
+          formatDateEs(new Date(exportOptions.fechaInicio)),
+        ]);
+      }
+      
+      if (fechaFinalizacion) {
+        generalSheet.addRow([
+          'Fecha de finalización estimada:',
+          formatDateEs(fechaFinalizacion),
+        ]);
+      }
+      
+      if (exportOptions?.duracionValor && exportOptions?.duracionUnidad) {
+        generalSheet.addRow([
+          'Duración estimada:',
+          formatDuration(exportOptions.duracionValor, exportOptions.duracionUnidad),
+        ]);
+      }
+      
+      generalSheet.addRow([]);
+    }
     
     generalSheet.addRow([]);
     
@@ -96,9 +149,9 @@ export async function POST(request: NextRequest) {
     generalSheet.getColumn(3).width = 10;
     
     // ========================================
-    // HOJAS 2-5: CATEGORÍAS
+    // HOJAS 2-6: CATEGORÍAS
     // ========================================
-    const categories: CategoryKey[] = ['materiales', 'manoObra', 'maquinaria', 'costesIndirectos'];
+    const categories: CategoryKey[] = ['materiales', 'manoObra', 'maquinaria', 'costesIndirectos', 'otros'];
     
     categories.forEach((categoryKey) => {
       const metadata = getCategoryMetadata(categoryKey);
@@ -113,6 +166,15 @@ export async function POST(request: NextRequest) {
       
       sheet.getCell('A2').value = metadata.description;
       sheet.mergeCells('A2:E2');
+      
+      // Nota especial para "Otros"
+      if (categoryKey === 'otros') {
+        sheet.addRow([]);
+        const noteRow = sheet.addRow(['⚠️ Nota: Esta categoría NO tiene margen aplicado']);
+        noteRow.getCell(1).font = { italic: true, color: { argb: 'FFDC2626' } };
+        const noteRowNum = sheet.lastRow?.number ?? 4;
+        sheet.mergeCells(`A${noteRowNum}:E${noteRowNum}`);
+      }
       
       sheet.addRow([]);
       
@@ -185,11 +247,23 @@ export async function POST(request: NextRequest) {
     // Generar buffer
     const buffer = await workbook.xlsx.writeBuffer();
 
+    // Validar que existe el nombre de archivo (ahora es obligatorio)
+    if (!exportOptions?.nombreArchivo) {
+      return NextResponse.json(
+        { message: 'El nombre del archivo es obligatorio' },
+        { status: 400 }
+      );
+    }
+
+    // Sanitizar y preparar nombre del archivo manteniendo UTF-8
+    const sanitizedName = sanitizeFilename(exportOptions.nombreArchivo);
+    const filename = `${sanitizedName}.xlsx`;
+
     // Retornar archivo
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': 'attachment; filename=escandallo.xlsx',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
       },
     });
   } catch (error) {

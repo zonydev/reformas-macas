@@ -36,6 +36,11 @@ const COLOR_CLASSES: Record<string, { bg: string; border: string; text: string }
     border: 'border-purple-200',
     text: 'text-purple-700',
   },
+  red: {
+    bg: 'bg-red-50',
+    border: 'border-red-200',
+    text: 'text-red-700',
+  },
 };
 
 export const CategorySection: React.FC<CategorySectionProps> = ({

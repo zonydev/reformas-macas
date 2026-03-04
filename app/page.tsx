@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useReducer, useState } from 'react';
-import { CategoryData, LineItem, Margins, CategoryKey } from '@/lib/types';
+import { CategoryData, LineItem, Margins, CategoryKey, ExportOptions } from '@/lib/types';
 import { DEFAULT_MARGINS, CATEGORIES, getCategoryMetadata } from '@/lib/constants';
 import { calculateEstimate, createEmptyLineItem, duplicateLineItem, updateLineTotal } from '@/lib/costing';
 import { generateId } from '@/lib/utils';
 import { CategorySection } from '@/components/CategorySection';
 import { MarginsSection } from '@/components/MarginsSection';
 import { SummaryPanel } from '@/components/SummaryPanel';
+import { ExportModal } from '@/components/ExportModal';
 
 // Estado inicial
 const initialCategories: CategoryData = {
@@ -15,6 +16,7 @@ const initialCategories: CategoryData = {
   manoObra: [],
   maquinaria: [],
   costesIndirectos: [],
+  otros: [],
 };
 
 // Tipos de acciones para el reducer
@@ -78,12 +80,13 @@ export default function Home() {
   const [margins, setMargins] = useState<Margins>(DEFAULT_MARGINS);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Calcular estimación en tiempo real
   const estimate = calculateEstimate(categories, margins);
 
   // Handler para exportar a Excel
-  const handleExport = async () => {
+  const handleExport = async (exportOptions?: ExportOptions) => {
     setIsExporting(true);
     setExportError(null);
 
@@ -96,6 +99,7 @@ export default function Home() {
         body: JSON.stringify({
           categories,
           margins,
+          exportOptions,
         }),
       });
 
@@ -110,12 +114,28 @@ export default function Home() {
       const a = document.createElement('a');
       a.href = url;
       
-      // Nombre del archivo con fecha
-      const now = new Date();
-      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-      a.download = `escandallo-${dateStr}-${timeStr}.xlsx`;
+      // Obtener nombre del archivo del header (soporta UTF-8)
+      const contentDisposition = response.headers.get('content-disposition');
+      let filename = 'escandallo.xlsx';
       
+      if (contentDisposition) {
+        // Intentar extraer filename*=UTF-8'' primero (RFC 5987)
+        const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+        if (utf8Match) {
+          filename = decodeURIComponent(utf8Match[1]);
+        } else {
+          // Fallback a filename= tradicional
+          const standardMatch = contentDisposition.match(/filename="?([^";]+)"?/);
+          if (standardMatch) {
+            filename = standardMatch[1];
+          }
+        }
+      } else if (exportOptions?.nombreArchivo) {
+        // Usar el nombre proporcionado directamente
+        filename = `${exportOptions.nombreArchivo}.xlsx`;
+      }
+      
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -165,21 +185,30 @@ export default function Home() {
           {/* Columna principal - Categorías */}
           <div className="lg:col-span-2 space-y-6">
             {CATEGORIES.map((cat) => (
-              <CategorySection
-                key={cat.key}
-                categoryKey={cat.key}
-                items={categories[cat.key]}
-                onAddItem={() => dispatch({ type: 'ADD_ITEM', category: cat.key })}
-                onUpdateItem={(id, item) =>
-                  dispatch({ type: 'UPDATE_ITEM', category: cat.key, id, item })
-                }
-                onDeleteItem={(id) =>
-                  dispatch({ type: 'DELETE_ITEM', category: cat.key, id })
-                }
-                onDuplicateItem={(id) =>
-                  dispatch({ type: 'DUPLICATE_ITEM', category: cat.key, id })
-                }
-              />
+              <div key={cat.key}>
+                {cat.key === 'otros' && (
+                  <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+                    <p className="text-sm text-blue-900">
+                      <strong>ℹ️ Importante:</strong> Los gastos incluidos en esta categoría 
+                      <strong> no tendrán margen aplicado</strong>, pero <strong>sí se incluirán en el precio final</strong> del proyecto.
+                    </p>
+                  </div>
+                )}
+                <CategorySection
+                  categoryKey={cat.key}
+                  items={categories[cat.key]}
+                  onAddItem={() => dispatch({ type: 'ADD_ITEM', category: cat.key })}
+                  onUpdateItem={(id, item) =>
+                    dispatch({ type: 'UPDATE_ITEM', category: cat.key, id, item })
+                  }
+                  onDeleteItem={(id) =>
+                    dispatch({ type: 'DELETE_ITEM', category: cat.key, id })
+                  }
+                  onDuplicateItem={(id) =>
+                    dispatch({ type: 'DUPLICATE_ITEM', category: cat.key, id })
+                  }
+                />
+              </div>
             ))}
 
             {/* Sección de márgenes */}
@@ -191,7 +220,7 @@ export default function Home() {
                 Generar Excel
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Exporta el escandallo completo a un archivo Excel con 5 hojas: General, Materiales, Mano de Obra, Maquinaria y Costes Indirectos.
+                Exporta el escandallo completo a un archivo Excel con todas las hojas: General, Materiales, Mano de Obra, Maquinaria, Costes Indirectos y Otros.
               </p>
               
               {exportError && (
@@ -201,7 +230,7 @@ export default function Home() {
               )}
 
               <button
-                onClick={handleExport}
+                onClick={() => setIsExportModalOpen(true)}
                 disabled={isExporting}
                 className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 text-white font-semibold py-4 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg disabled:cursor-not-allowed"
               >
@@ -242,6 +271,14 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* Modal de exportación */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        onExport={handleExport}
+        isLoading={isExporting}
+      />
 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">

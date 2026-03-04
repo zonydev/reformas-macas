@@ -32,6 +32,12 @@ export const SummaryPanel: React.FC<SummaryPanelProps> = ({ estimate, margins })
           <span className="text-gray-600">Costes Indirectos:</span>
           <span className="font-semibold">{formatCurrency(estimate.subtotals.costesIndirectos)}</span>
         </div>
+        {estimate.subtotals.otros > 0 && (
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Otros (sin margen):</span>
+            <span className="font-semibold text-red-600">{formatCurrency(estimate.subtotals.otros)}</span>
+          </div>
+        )}
       </div>
 
       {/* Coste directo */}

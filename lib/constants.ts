@@ -33,6 +33,13 @@ export const CATEGORIES: CategoryMetadata[] = [
     color: 'purple',
     defaultUnit: 'ud',
   },
+  {
+    key: 'otros',
+    label: 'Otros',
+    description: 'Gastos adicionales sin margen aplicado',
+    color: 'red',
+    defaultUnit: 'ud',
+  },
 ];
 
 // Helper para obtener metadata por key
@@ -48,6 +55,7 @@ export const COMMON_UNITS: Record<CategoryKey, string[]> = {
   manoObra: ['hora', 'día', 'mes', 'ud'],
   maquinaria: ['día', 'hora', 'semana', 'mes', 'ud'],
   costesIndirectos: ['ud', '%', 'global'],
+  otros: ['ud', 'global', 'kg'],
 };
 
 // Valores por defecto para márgenes
